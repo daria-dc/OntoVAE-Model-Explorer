@@ -10,7 +10,7 @@ git clone https://github.com/daria-dc/GO-VAE-Model-Explorer.git
 
 2. Download the data from dropbox under the following link
 
-https://www.dropbox.com/s/l5kjyo5goqj72wi/data.tar.gz?dl=0
+https://www.dropbox.com/s/yq6eatp10l7a4em/data.tar.gz?dl=0
 
 
 3. Store the data folder in the repo folder. You should now have the following structure:
@@ -22,15 +22,13 @@ https://www.dropbox.com/s/l5kjyo5goqj72wi/data.tar.gz?dl=0
 │   ├── bootstrap.slate.css
 │   └── custom.css
 ├── data
-│   ├── GO_BP_at_least_depth3_min_30_max_1000_trimmed_annot.csv
-│   ├── GO_BP_recount3_genes_depth3_min_30_max_1000_trimmed_graph.json
-│   ├── go_ids_depth3_trimmed_wang_sem_sim.npy
-│   ├── GTEx_quant_norm_trimmed_ensemble100_avg_GO_activations.npy
-│   ├── GTEx_samples_latent_space_embedding_RVAE-484.npy
-│   ├── recount3_depth3_min_30_max_1000_trimmed_GO_genes.csv
-│   ├── recount_brain_GTEx_TCGA_annot.csv
-│   ├── RVAE-484_UMAP_results.csv
-│   └── trimmed_GTEx_ensemble100_brain_vs_rest_GO_node_activations.csv
+│   ├── default_UMAP_results.csv
+│   ├── latent_space_embedding.npy
+│   ├── onto_trimmed_annot.csv
+│   ├── onto_trimmed_graph.json
+│   ├── onto_trimmed_wang_sem_sim.npy
+│   ├── sample_annot.csv
+│   └── Wilcox_results.csv
 └── requirements.txt
 ```
 
