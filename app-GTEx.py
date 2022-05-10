@@ -8,7 +8,6 @@
 
 #-----------------------------------------------------------------------
 # import libraries
-
 import pandas as pd
 import numpy as np
 import json
@@ -44,36 +43,32 @@ FA = "https://use.fontawesome.com/releases/v5.12.1/css/all.css"
 ### IMPORTING NECESSARY DATA ###
 
 #-----------------------------------------------------------------------
-# load latent space
-z = np.load('data/GTEx_samples_latent_space_embedding_RVAE-484.npy')
 
-# load genes that were used for model training
-genes = pd.read_csv('data/recount3_depth3_min_30_max_1000_trimmed_GO_genes.csv', header=None)
-genes = genes.iloc[:,1].tolist()
+
+# load latent space
+z = np.load('data/latent_space_embedding.npy')
 
 # load GTEx annotation
-annot = pd.read_csv('data/recount_brain_GTEx_TCGA_annot.csv')
-annot = annot[annot.study == 'GTEx'].reset_index(drop=True)
-
-# load GO term activations from the decoder
-GO_act = np.load('data/GTEx_quant_norm_trimmed_ensemble100_avg_GO_activations.npy')
-
-# load annotation of GO terms
-GO_annot = pd.read_csv('data/GO_BP_at_least_depth3_min_30_max_1000_trimmed_annot.csv', sep=';')
-GO_annot['GO'] = GO_annot[['GO_ID', 'GO_term']].agg(' | '.join, axis=1)
-roots = GO_annot[GO_annot.depth == 3].GO_ID.tolist()
+sample_annot = pd.read_csv('data/sample_annot.csv')
+sample_annot = sample_annot[sample_annot.study == 'GTEx'].reset_index(drop=True)
+sample_annot = sample_annot[sample_annot.tissue != 'unknown']
 
 
-# load precomputed GO term Wang semantic similarities
-wsem_sim = np.load('data/go_ids_depth3_trimmed_wang_sem_sim.npy')
+# load annotation of ontology terms
+annot = pd.read_csv('data/onto_trimmed_annot.csv', sep=';')
+annot['GO'] = annot[['GO_ID', 'GO_term']].agg(' | '.join, axis=1)
+roots = annot[annot.depth == 0].GO_ID.tolist()
+
+# load precomputed onto term Wang semantic similarities
+wsem_sim = np.load('data/onto_trimmed_wang_sem_sim.npy')
 
 # load data for default display
-umap_default = pd.read_csv('data/RVAE-484_UMAP_results.csv', sep=';')
-wilcox_default = pd.read_csv('data/trimmed_GTEx_ensemble100_brain_vs_rest_GO_node_activations.csv', sep=';')
+umap_default = pd.read_csv('data/default_UMAP_results.csv', sep=';')
+wilcox_results = pd.read_csv('data/Wilcox_results.csv', sep=';')
 
-# load GO graph
-with open('data/GO_BP_recount3_genes_depth3_min_30_max_1000_trimmed_graph.json', 'r') as jfile:
-    go_graph = json.load(jfile)
+# load onto graph
+with open('data/onto_trimmed_graph.json', 'r') as jfile:
+    onto_graph = json.load(jfile)
 #-----------------------------------------------------------------------
 
 
@@ -87,7 +82,7 @@ def create_scatter_plot(data, color):
     '''
     Input
     data: data from the precomputed UMAP
-    color: the variable by which user wishes to color the plot ('study', 'tissue', 'disease')
+    color: the variable by which user wishes to color the plot ('study', 'tissue')
     Output
     fig: the UMAP scatter plot colored by color
     '''
@@ -106,7 +101,7 @@ def create_scatter_plot(data, color):
     return fig
 
 
-# functions to retrieve common ancestors from list of GO IDs
+# functions to retrieve common ancestors from list of ontology IDs
 
 def find_all_paths(graph, start, end, path=[]):
     path = path + [start]
@@ -141,19 +136,19 @@ def get_comm_ancestors(leaves, roots, graph):
 def get_cytoscape_components(group, wsem_sim):
     '''
     Input 
-    group: the sorted results of the Wilcoxon test for one goup
+    group: the sorted results of the Wilcoxon test for one group
     wsem_sim: the precomputed Wang semantic similarities
     Output
     nodes + edges: the elements for drawing the graph
     stylesheet: the stylesheet for the group
     '''
 
-    # filter and sort the Wang sem sims to match the sorted GO terms of the group
-    group_sims = wsem_sim[group.index.to_numpy(),:]
-    group_sims = group_sims[:,group.index.to_numpy()]
+    # filter and sort the Wang sem sims to match the sorted terms of the group
+    group_sims = wsem_sim[group.ind.to_numpy(),:]
+    group_sims = group_sims[:,group.ind.to_numpy()]
 
     # apply a threshold and set similarity values below to 0
-    group_sims[group_sims < 0.3] = 0
+    group_sims[group_sims < 0.5] = 0
 
     # create the graph and retrieve coordinates
     graph = Graph.Weighted_Adjacency(group_sims, mode='undirected', loops=False)
@@ -162,7 +157,7 @@ def get_cytoscape_components(group, wsem_sim):
 
     # retrieve edge information
     edge_df = graph.get_edge_dataframe()
-    es = [(group.GO_id.iloc[edge_df.source[i]], group.GO_id.iloc[edge_df.target[i]], edge_df.weight[i]) for i in range(edge_df.shape[0])]
+    es = [(group.id.iloc[edge_df.source[i]], group.id.iloc[edge_df.target[i]], edge_df.weight[i]) for i in range(edge_df.shape[0])]
 
     # perform community clustering and add community membership to the nodes
     community = graph.community_multilevel()
@@ -178,30 +173,30 @@ def get_cytoscape_components(group, wsem_sim):
     group['color'] = [color_map[community.membership[i]] for i in range(group.shape[0])]
 
     # extract community members
-    comm_members = {i: group[group.community == i].GO_id.tolist() for i in group.community.unique()}
+    comm_members = {i: group[group.community == i].id.tolist() for i in group.community.unique()}
     comm_members = {k:v for k,v in comm_members.items() if len(v) > 1}
 
     # get community representatives (members with most genes)
     representatives = []
     for vals in comm_members.values():
-        representatives.append(group[group.GO_id.isin(vals)].sort_values('genes', ascending=False).iloc[0,:].GO_id)
-    group['representative'] = np.where(group['GO_id'].isin(representatives), True, False)
+        representatives.append(group[group.id.isin(vals)].sort_values('genes', ascending=False).iloc[0,:].id)
+    group['representative'] = np.where(group['id'].isin(representatives), True, False)
 
     # get their common ancestors
-    comm_ancestors = {k: get_comm_ancestors(leaves, roots, go_graph) for k,leaves in comm_members.items()}
+    comm_ancestors = {k: get_comm_ancestors(leaves, roots, onto_graph) for k,leaves in comm_members.items()}
 
     # get representative labels
     rep_labels = []
     for k, v in comm_ancestors.items():
         if len(v) == 1:
-            rep_labels.append(GO_annot[GO_annot.GO_ID.isin(v)].GO_term.iloc[0])
+            rep_labels.append(annot[annot.GO_ID.isin(v)].GO_term.iloc[0])
         elif len(v) == 0:
-            rep_labels.append(GO_annot[GO_annot.GO_ID.isin(comm_members[k])].sort_values('genes', ascending=False).iloc[0,:].GO_term)
+            rep_labels.append(annot[annot.GO_ID.isin(comm_members[k])].sort_values('genes', ascending=False).iloc[0,:].GO_term)
         else:
-            rep_labels.append(GO_annot[GO_annot.GO_ID.isin(v)].sort_values(['depth', 'genes'], ascending=[False, False]).iloc[0,:].GO_term)
+            rep_labels.append(annot[annot.GO_ID.isin(v)].sort_values(['depth', 'genes'], ascending=[False, False]).iloc[0,:].GO_term)
     
     rep_dict = dict(zip(representatives, rep_labels))
-    group['rep_label'] = group['GO_id']
+    group['rep_label'] = group['id']
     group['rep_label'] = group['rep_label'].map(rep_dict)
 
     # get rep labels for hover
@@ -211,12 +206,8 @@ def get_cytoscape_components(group, wsem_sim):
 
     # create graph nodes and edges for cytoscape
     nodes = [{'data': 
-                {'id': group.GO_id.iloc[i], 
-                'label': group.GO_term.iloc[i],
-                'stat': group.statistic.iloc[i],
-                'pval': group.pval.iloc[i],
-                'qval': group.qval.iloc[i],
-                'depth': group.depth.iloc[i],
+                {'id': group.id.iloc[i], 
+                'label': group.term.iloc[i],
                 'genes': np.log(group.genes.iloc[i] + 2)*10,
                 'representative': group.representative.iloc[i],
                 'rep_label': group.rep_label.iloc[i],
@@ -227,7 +218,7 @@ def get_cytoscape_components(group, wsem_sim):
              'selectable': True} for i in range(group.shape[0])]
 
     edges = [{'data': {'source': e[0], 'target': e[1], 'weight': e[2]*5},
-          'classes': str( group[group.GO_id == e[0]].community.iloc[0])} for e in es]
+          'classes': str( group[group.id == e[0]].community.iloc[0])} for e in es]
 
     # create stylehseet
     stylesheet = [
@@ -280,7 +271,6 @@ def get_cytoscape_components(group, wsem_sim):
 #-----------------------------------------------------------------------
 # Initialize the app
 app = dash.Dash(external_stylesheets=[dbc.themes.BOOTSTRAP, W3, FA])
-server = app.server
 #app.config.suppress_callback_exceptions = True
 #-----------------------------------------------------------------------
 
@@ -302,11 +292,11 @@ app.layout = html.Div(
                                         html.I(className='fab fa-github button-icon w3-large'),
                                         "Source Code"
                                     ],
-                                    href="https://github.com/daria-dc/GO-VAE-Model-Explorer",
+                                    href="https://github.com/daria-dc/recount3_VAE_dash",
                                 )
                             ),
                         ],
-                        brand="GO-VAE Model Explorer",
+                        brand="OntoVAE Model Explorer",
                         brand_href="#",
                         color="dark",
                         dark=True,
@@ -322,29 +312,23 @@ app.layout = html.Div(
             dbc.Row(
                 [
                     dbc.Col(
-                        dcc.Markdown('Select available studies, tissues and diseases to inspect their clustering in the latent space. When nothing is selected, all samples are represented.'),
+                        dcc.Markdown('Select available studies, tissues to inspect their clustering in the latent space. When nothing is selected, all samples are represented.'),
                             width={'size': 6},
                     ),
                     
                     dbc.Col(
                         children=[
                             dcc.Dropdown(id = 'study',
-                                options = [{'label': i, 'value': i} for i in annot.study.unique()],
+                                options = [{'label': i, 'value': i} for i in sample_annot.study.unique()],
                                 placeholder="Select one or more studies...",
                                 multi = True,
                                 value = []),
                         
                             dcc.Dropdown(id = 'tissue',
-                                options = [{'label': i, 'value': i} for i in annot.tissue.unique()],
+                                options = [{'label': i, 'value': i} for i in sample_annot.tissue.unique()],
                                 placeholder="Select one or more tissues...",
                                 multi = True,
-                                value = []),
-    
-                            dcc.Dropdown(id = 'disease',
-                                options = [{'label': i, 'value': i} for i in annot.disease.unique()],
-                                placeholder="Select one or more diseases...",
-                                multi = True,
-                                value =[])
+                                value = [])
                         ], width={'size': 6},
                     )
                 ], #no_gutters = True
@@ -372,8 +356,7 @@ app.layout = html.Div(
                     dbc.Col(
                         dcc.RadioItems(id = 'color_select_1',
                             options = [{'label': 'tissue', 'value': 'tissue'},
-                                    {'label': 'study', 'value': 'study'},
-                                    {'label': 'disease', 'value': 'disease'}],
+                                    {'label': 'study', 'value': 'study'}],
                             value = 'tissue',
                             inputStyle={'margin-right': '3px', 'margin-left': '10px'}
                         ),
@@ -388,8 +371,7 @@ app.layout = html.Div(
                     dbc.Col(
                         dcc.RadioItems(id = 'color_select_2',
                             options = [{'label': 'tissue', 'value': 'tissue'},
-                                    {'label': 'study', 'value': 'study'},
-                                    {'label': 'disease', 'value': 'disease'}],
+                                    {'label': 'study', 'value': 'study'}],
                             value = 'study',
                             inputStyle={'margin-right': '3px', 'margin-left': '10px'}
                         ),
@@ -417,16 +399,16 @@ app.layout = html.Div(
 
             html.Hr(),
 
-            dbc.Row(dbc.Col(dcc.Markdown('To compare GO term activations between groups you can select two groups to run a Wilcoxon test between them for each GO term. The graph below each group shows the top terms for this group, clustered by their Wang semantic similarities. If tissue or disease are only selected for one group, the comparison will be performed against all remaining tissues or diseases, respectively.'),
+            dbc.Row(dbc.Col(dcc.Markdown('Select for which tissues you want to display the top terms.'),
                             width={'size': 12},
                             ),
                     ),
 
-            # Dropdown menus to select groups between which to perform Wilcoxon test for GO node activations
+            # Dropdown menus to select groups for which to display ontology networks
             dbc.Row(
                 [
                     dbc.Col(dcc.Dropdown(id = 'study-group1',
-                            options = [{'label': i, 'value': i} for i in annot.study.unique()],
+                            options = [{'label': i, 'value': i} for i in sample_annot.study.unique()],
                             placeholder="Select one or more studies...",
                             multi = True,
                             value = ['GTEx']),
@@ -434,67 +416,36 @@ app.layout = html.Div(
                             ),
 
                     dbc.Col(dcc.Dropdown(id = 'study-group2',
-                            options = [{'label': i, 'value': i} for i in annot.study.unique()],
-                            placeholder="Select one or more studies...",
-                            multi = True,
-                            value = ['GTEx']),
-                            width = {'size': 6}
-                            ),
+                             options = [{'label': i, 'value': i} for i in sample_annot.study.unique()],
+                             placeholder="Select one or more studies...",
+                             multi = True,
+                             value = ['GTEx']),
+                             width = {'size': 6}
+                             ),
                 ]
             ),
 
             dbc.Row(
                 [
                     dbc.Col(dcc.Dropdown(id = 'tissue-group1',
-                            options = [{'label': i, 'value': i} for i in annot.tissue.unique()],
-                            placeholder="Select one or more tissues...",
-                            multi = True,
-                            value = ['Brain']),
+                            options = [{'label': i, 'value': i} for i in sample_annot.tissue.unique()],
+                            placeholder="Select a tissue...",
+                            multi = False,
+                            value = 'Brain'),
                             width = {'size': 6}
                             ),
 
                     dbc.Col(dcc.Dropdown(id = 'tissue-group2',
-                            options = [{'label': i, 'value': i} for i in annot.tissue.unique()],
-                            placeholder="Select one or more tissues...",
-                            multi = True,
-                            value = []),
-                            width = {'size': 6}
-                            ),
+                             options = [{'label': i, 'value': i} for i in sample_annot.tissue.unique()],
+                             placeholder="Select a tissue...",
+                             multi = False,
+                             value = 'Liver'),
+                             width = {'size': 6}
+                             ),
                 ]
             ),
 
-            dbc.Row(
-                [
-                    dbc.Col(dcc.Dropdown(id = 'disease-group1',
-                            options = [{'label': i, 'value': i} for i in annot.disease.unique()],
-                            placeholder="Select one or more diseases...",
-                            multi = True,
-                            value =[]),
-                            width = {'size': 6}
-                            ),
-                    
-                    dbc.Col(dcc.Dropdown(id = 'disease-group2',
-                            options = [{'label': i, 'value': i} for i in annot.disease.unique()],
-                            placeholder="Select one or more diseases...",
-                            multi = True,
-                            value =[]),
-                            width = {'size': 6}
-                            ),
-
-                ]
-            ),
-
-            html.Br(),
-
-            html.Button(
-                id = 'wilcox-button',
-                children=[
-                    html.I(className="fas fa-redo w3-large button-icon"), #, style={'padding-right': 10}),
-                    "Perform Wilcoxon test"
-                ], className="w3-button w3-green w3-round"
-            ),
-
-            #html.Button('Click here to perform Wilcoxon test', id='wilcox-button'),
+ 
 
             html.Br(),
             html.Br(),
@@ -603,47 +554,6 @@ app.layout = html.Div(
 ### DYNAMIC CALLBACKS FOR USER INTERACTION
 
 #-----------------------------------------------------------------------
-# Callbacks for dependence of dropdown menus for UMAP
-
-@app.callback(
-     Output('study', 'options'),
-    [Input('tissue', 'value'),
-     Input('disease', 'value')]
-)
-def set_study_options(tissue, disease):
-    if len(tissue) == 0:
-        tissue = annot.tissue.unique().tolist()
-    if len(disease) == 0:
-        disease = annot.disease.unique().tolist()
-    annot_sub = annot[annot.tissue.isin(tissue) & annot.disease.isin(disease)]
-    return [{'label': i, 'value': i} for i in annot_sub.study.unique()]
-
-@app.callback(
-     Output('tissue', 'options'),
-    [Input('study', 'value'),
-     Input('disease', 'value')]
-)
-def set_tissue_options(study, disease):
-    if len(study) == 0:
-        study = annot.study.unique().tolist()
-    if len(disease) == 0:
-        disease = annot.disease.unique().tolist()
-    annot_sub = annot[annot.study.isin(study) & annot.disease.isin(disease)]
-    return [{'label': i, 'value': i} for i in annot_sub.tissue.unique()]
-
-@app.callback(
-     Output('disease', 'options'),
-    [Input('study', 'value'),
-     Input('tissue', 'value')]
-)
-def set_disease_options(study, tissue):
-    if len(study) == 0:
-        study = annot.study.unique().tolist()
-    if len(tissue) == 0:
-        tissue = annot.tissue.unique().tolist()
-    annot_sub = annot[annot.study.isin(study) & annot.tissue.isin(tissue)]
-    return [{'label': i, 'value': i} for i in annot_sub.disease.unique()]
-
 
 # Callback for UMAP computation
 
@@ -651,14 +561,13 @@ def set_disease_options(study, tissue):
      Output('umap_res', 'data'),
      Input('umap-button', 'n_clicks'),
     [State('study', 'value'),
-     State('tissue', 'value'),
-     State('disease', 'value')]
+     State('tissue', 'value')]
 )
-def compute_UMAP(n_clicks, study, tissue, disease):
+def compute_UMAP(n_clicks, study, tissue):
 
     # check if the setting is the default
     default = False
-    if len(study) == 0 and len(tissue) == 0 and len(disease) == 0:
+    if len(study) == 0 and len(tissue) == 0:
         default=True
 
     if default == True:
@@ -666,17 +575,14 @@ def compute_UMAP(n_clicks, study, tissue, disease):
     else:
         # adjust input for empty fields
         if len(study) == 0:
-            study = annot.study.unique().tolist()
+            study = sample_annot.study.unique().tolist()
         if len(tissue) == 0:
-            tissue = annot.tissue.unique().tolist()
-        if len(disease) == 0:
-            disease = annot.disease.unique().tolist()
+            tissue = sample_annot.tissue.unique().tolist()
 
         # subset data based on user input
-        annot_sub = annot[annot.study.isin(study) & annot.tissue.isin(tissue) & annot.disease.isin(disease)]
-        samples_GO_sub = annot_sub.index.to_numpy()
-        z_sub = z[samples_GO_sub,:]
-        top5_GO_sub = top5_GO.iloc[samples_GO_sub,:].reset_index(drop=True)
+        annot_sub = sample_annot[sample_annot.study.isin(study) & sample_annot.tissue.isin(tissue)]
+        samples_sub = annot_sub.index.to_numpy()
+        z_sub = z[samples_sub,:]
 
         # run UMAP
         reducer = umap.UMAP()
@@ -684,7 +590,7 @@ def compute_UMAP(n_clicks, study, tissue, disease):
         embedding = pd.DataFrame(embedding)
         embedding.columns = ['UMAP 1', 'UMAP 2']
 
-        embedding = pd.concat([embedding, top5_GO_sub, annot_sub.reset_index(drop=True)], axis=1)
+        embedding = pd.concat([embedding, annot_sub.reset_index(drop=True)], axis=1)
 
     return embedding.to_json(date_format='iso', orient='split')
 
@@ -710,193 +616,35 @@ def update_scatter_plot(umap_res, color1, color2):
 
 
 
-# Callbacks for dependence of dropdown menus for GO terms
-
-@app.callback(
-     Output('study-group1', 'options'),
-    [Input('tissue-group1', 'value'),
-     Input('disease-group1', 'value')]
-)
-def set_study_group1_options(tissue, disease):
-    if len(tissue) == 0:
-        tissue = annot.tissue.unique().tolist()
-    if len(disease) == 0:
-        disease = annot.disease.unique().tolist()
-    annot_sub = annot[annot.tissue.isin(tissue) & annot.disease.isin(disease)]
-    return [{'label': i, 'value': i} for i in annot_sub.study.unique()]
-
-@app.callback(
-     Output('tissue-group1', 'options'),
-    [Input('study-group1', 'value'),
-     Input('disease-group1', 'value')]
-)
-def set_tissue_group1_options(study, disease):
-    if len(study) == 0:
-        study = annot.study.unique().tolist()
-    if len(disease) == 0:
-        disease = annot.disease.unique().tolist()
-    annot_sub = annot[annot.study.isin(study) & annot.disease.isin(disease)]
-    return [{'label': i, 'value': i} for i in annot_sub.tissue.unique()]
-
-@app.callback(
-     Output('disease-group1', 'options'),
-    [Input('study-group1', 'value'),
-     Input('tissue-group1', 'value')]
-)
-def set_disease_group1_options(study, tissue):
-    if len(study) == 0:
-        study = annot.study.unique().tolist()
-    if len(tissue) == 0:
-        tissue = annot.tissue.unique().tolist()
-    annot_sub = annot[annot.study.isin(study) & annot.tissue.isin(tissue)]
-    return [{'label': i, 'value': i} for i in annot_sub.disease.unique()]
-
-@app.callback(
-     Output('study-group2', 'options'),
-    [Input('tissue-group2', 'value'),
-     Input('disease-group2', 'value')]
-)
-def set_study_group2_options(tissue, disease):
-    if len(tissue) == 0:
-        tissue = annot.tissue.unique().tolist()
-    if len(disease) == 0:
-        disease = annot.disease.unique().tolist()
-    annot_sub = annot[annot.tissue.isin(tissue) & annot.disease.isin(disease)]
-    return [{'label': i, 'value': i} for i in annot_sub.study.unique()]
-
-@app.callback(
-     Output('tissue-group2', 'options'),
-    [Input('study-group2', 'value'),
-     Input('disease-group2', 'value')]
-)
-def set_tissue_group2_options(study, disease):
-    if len(study) == 0:
-        study = annot.study.unique().tolist()
-    if len(disease) == 0:
-        disease = annot.disease.unique().tolist()
-    annot_sub = annot[annot.study.isin(study) & annot.disease.isin(disease)]
-    return [{'label': i, 'value': i} for i in annot_sub.tissue.unique()]
-
-@app.callback(
-     Output('disease-group2', 'options'),
-    [Input('study-group2', 'value'),
-     Input('tissue-group2', 'value')]
-)
-def set_disease_group2_options(study, tissue):
-    if len(study) == 0:
-        study = annot.study.unique().tolist()
-    if len(tissue) == 0:
-        tissue = annot.tissue.unique().tolist()
-    annot_sub = annot[annot.study.isin(study) & annot.tissue.isin(tissue)]
-    return [{'label': i, 'value': i} for i in annot_sub.disease.unique()]
-
-
-
-
-# Callback for performance of Wilcoxon test
-
-@app.callback(
-     Output('wilcox-res', 'data'),
-     Input('wilcox-button', 'n_clicks'),
-    [State('study-group1', 'value'),
-     State('tissue-group1', 'value'),
-     State('disease-group1', 'value'),
-     State('study-group2', 'value'),
-     State('tissue-group2', 'value'),
-     State('disease-group2', 'value')]
-)
-def update_stat_table(n_clicks, st1, tis1, dis1, st2, tis2, dis2):
-
-    # check if the setting is the default
-    default=False
-
-    if st1 == ['GTEx'] and st2 == ['GTEx'] and tis1 == ['Brain'] and len(tis2) == 0 and len(dis1) == 0 and len(dis2) == 0:
-        default = True
-
-    else:
-        group1 = None
-        group2 = None
-
-        if not (len(st1) == 0 and len(tis1) == 0 and len(dis1) == 0):
-            group1 = 'group1'
-
-        if not (len(st2) == 0 and len(tis2) == 0 and len(dis2) == 0):
-            group2 = 'group2'
-        
-    if default == True:
-        results = wilcox_default
-    else:
-        if len(st1) == 0: st1 = annot.study.unique().tolist() 
-        if len(st2) == 0: st2 = annot.study.unique().tolist() 
-        if len(tis1) > 0:
-            if len(tis2) == 0: 
-                tis2 = [el for el in annot.tissue.unique().tolist() if el not in tis1]
-        else:
-            tis1 = annot.tissue.unique().tolist()
-            if len(tis2) == 0:
-                tis2 = annot.tissue.unique().tolist() 
-        if len(dis1) > 0:
-            if len(dis2) == 0: 
-                dis2 = [el for el in annot.disease.unique().tolist() if el not in dis1]
-        else:
-            dis1 = annot.disease.unique().tolist()
-            if len(dis2) == 0:
-                dis2 = annot.disease.unique().tolist() 
-            
-        # subset two groups to compare based on user input
-        annot_group1 = annot[annot.study.isin(st1) & annot.tissue.isin(tis1) & annot.disease.isin(dis1)]
-        GO_act_group1 = GO_act[annot_group1.index.to_numpy(),:]
-
-        annot_group2 = annot[annot.study.isin(st2) & annot.tissue.isin(tis2) & annot.disease.isin(dis2)]
-        GO_act_group2 = GO_act[annot_group2.index.to_numpy(),:]
-
-        # perform Wilcoxon test
-        stats = [ranksums(GO_act_group1[:,i], GO_act_group2[:,i]) for i in range(GO_act.shape[1])]
-        stat = [i[0] for i in stats]
-        pval = [i[1] for i in stats]
-        qvals = fdrcorrection(np.array(pval))
-
-        # create results tables
-        results = pd.DataFrame({'GO_id': GO_annot['GO_ID'],
-                        'GO_term': GO_annot['GO_term'],
-                        'depth': GO_annot['depth'],
-                        'genes': GO_annot['genes'],
-                        'statistic': np.around(stat, decimals=2),
-                        'pval': np.around(pval, decimals=2),
-                        'qval': np.around(qvals[1], decimals=2)})
-
-    return results.to_json(date_format='iso', orient='split')
-
-
 # Callbacks for cytoscape graph generation
 
 @app.callback(
     [Output('go-graph1', 'elements'),
      Output('go-graph1', 'stylesheet')],
-    [Input('wilcox-res', 'data'),
+    [Input('tissue-group1', 'value'),
     Input('cyto-slider1', 'value')]
 )
-def draw_graph1(results, values):
+def draw_graph1(tissue, values):
 
-    data = pd.read_json(results, orient='split')
+    data = wilcox_results[wilcox_results.tissue == tissue]
+    data_sig = data.sort_values(['rank', 'hits', 'med_stat'], ascending = (True,False,False)).iloc[values[0]:values[1],:]
 
-    group1 = data[data.statistic > 0].sort_values(['qval', 'statistic'], ascending=[True, False]).iloc[values[0]:values[1],:]
-    elements1, stylesheet1 = get_cytoscape_components(group1, wsem_sim)
+    elements1, stylesheet1 = get_cytoscape_components(data_sig, wsem_sim)
 
     return elements1, stylesheet1
 
 @app.callback(
     [Output('go-graph2', 'elements'),
      Output('go-graph2', 'stylesheet')],
-    [Input('wilcox-res', 'data'),
+    [Input('tissue-group2', 'value'),
      Input('cyto-slider2', 'value')]
 )
-def draw_graph2(results, values):
+def draw_graph2(tissue, values):
 
-    data = pd.read_json(results, orient='split')
+    data = wilcox_results[wilcox_results.tissue == tissue]
+    data_sig = data.sort_values(['rank', 'hits', 'med_stat'], ascending = (True,False,False)).iloc[values[0]:values[1],:]
 
-    group2 = data[data.statistic < 0].sort_values(['qval', 'statistic']).iloc[values[0]:values[1],:]
-    elements2, stylesheet2 = get_cytoscape_components(group2, wsem_sim)
+    elements2, stylesheet2 = get_cytoscape_components(data_sig, wsem_sim)
 
     return elements2, stylesheet2
 
