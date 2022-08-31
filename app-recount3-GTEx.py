@@ -1,5 +1,5 @@
 ###========================================================================###
-##                     RECOUNT3 GO-VAE MODEL DASH APP                       ##
+##                        OntoVAE Model Explorer                            ##
 ###========================================================================###
 
 
@@ -277,7 +277,7 @@ app.layout = html.Div(
                                         html.I(className='fab fa-github button-icon w3-large'),
                                         "Source Code"
                                     ],
-                                    href="https://github.com/daria-dc/recount3_VAE_dash",
+                                    href="https://github.com/daria-dc/OntoVAE-Model-Explorer",
                                 )
                             ),
                         ],
