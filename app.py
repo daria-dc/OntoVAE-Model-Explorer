@@ -12,13 +12,14 @@ import pandas as pd
 import numpy as np
 import json
 import itertools
-from io import StringIO
+import requests
+from io import StringIO, BytesIO
 
 import dash
-import dash_table
+from dash import dash_table
 import dash_bootstrap_components as dbc
-import dash_html_components as html
-import dash_core_components as dcc
+from dash import html
+from dash import dcc
 import dash_cytoscape as cyto
 from dash.dependencies import Input, Output, State
 
@@ -37,17 +38,51 @@ FA = "https://use.fontawesome.com/releases/v5.12.1/css/all.css"
 
 
 
-### IMPORTING ANNOTATION ###
+### IMPORTING NECESSARY FILES ###
 
 #-----------------------------------------------------------------------
 
+# function to load pandas dataframe from url
+
+def load_pandas(url, sep):
+    response = requests.get(url)
+    return pd.read_csv(BytesIO(response.content), sep=sep)
+
+# function to load numpy arrays from url
+def load_numpy(url):
+    response = requests.get(url)
+    return np.load(BytesIO(response.content), allow_pickle=True)
+
+# function to load json from url
+def load_json(url):
+    response = requests.get(url)
+    return json.load(BytesIO(response.content))
+
 # load GTEx annotation
-sample_annot = pd.read_csv('data/recount3_GTEx_annot.csv')
+sample_annot = load_pandas('https://storage.googleapis.com/ovae-me_data/recount3_GTEx_annot.csv', sep=",")
+#sample_annot = pd.read_csv('data/recount3_GTEx_annot.csv')
 
 # load annotation of ontology terms
-annot = pd.read_csv('data/GO_ensembl_trimmed_annot.csv', sep=';')
+annot = load_pandas('https://storage.googleapis.com/ovae-me_data/GO_ensembl_trimmed_annot.csv', sep=";")
+#annot = pd.read_csv('data/GO_ensembl_trimmed_annot.csv', sep=';')
 annot['Term'] = annot[['ID', 'Name']].agg(' | '.join, axis=1)
 roots = annot[annot.depth == 0].ID.tolist()
+
+# load ontology graph
+onto_graph = load_json('https://storage.googleapis.com/ovae-me_data/GO_ensembl_trimmed_graph.json')
+
+# load wang semantic similarities
+wsem_sims = load_numpy('https://storage.googleapis.com/ovae-me_data/GO_ensembl_trimmed_wsem_sim.npy')
+
+# load pathway activities
+#act = load_numpy('https://storage.googleapis.com/ovae-me_data/recount3_GTEx_GO_activities.npy')
+
+# load UMAP results
+umap_res = load_pandas('https://storage.googleapis.com/ovae-me_data/recount3_GTEx_UMAP_results.csv', ";")
+
+# load Wilcoxon res
+wilcox_res = load_pandas('https://storage.googleapis.com/ovae-me_data/recount3_GTEx_Wilcoxon_results.csv', ";")
+
 
 #-----------------------------------------------------------------------
 
@@ -122,15 +157,15 @@ def get_cytoscape_components(group):
     stylesheet: the stylesheet for the group
     '''
     # load onto graph
-    with open('data/GO_ensembl_trimmed_graph.json', 'r') as jfile:
-        onto_graph = json.load(jfile)
+    # with open('data/GO_ensembl_trimmed_graph.json', 'r') as jfile:
+    #     onto_graph = json.load(jfile)
 
-    # read in Wang semantic similarities
-    group_sims = np.load('data/GO_ensembl_trimmed_wsem_sim.npy', mmap_mode='r')
+    # # read in Wang semantic similarities
+    # group_sims = np.load('data/GO_ensembl_trimmed_wsem_sim.npy', mmap_mode='r')
 
     # filter and sort the Wang sem sims to match the sorted terms of the group
-    group_sims = group_sims[group.index.to_numpy(),:]
-    group_sims = group_sims[:,group.index.to_numpy()]
+    group_sims = wsem_sims[group.ind.to_numpy(),:]
+    group_sims = group_sims[:,group.ind.to_numpy()]
 
     # apply a threshold and set similarity values below to 0
     group_sims[group_sims < 0.5] = 0
@@ -596,7 +631,7 @@ app.layout = html.Div(
 )
 def update_umap_scatter_plot(color1, color2):
 
-    umap_res = pd.read_csv('data/recount3_GTEx_UMAP_results.csv', sep=';')
+    #umap_res = pd.read_csv('data/recount3_GTEx_UMAP_results.csv', sep=';')
 
     fig1 = create_scatter_plot(umap_res, color1, 'UMAP 1', 'UMAP 2')
     fig2 = create_scatter_plot(umap_res, color2, 'UMAP 1', 'UMAP 2')
@@ -607,30 +642,38 @@ def update_umap_scatter_plot(color1, color2):
 # Callback to make scatterplots for pathway activities
 
 @app.callback(
-    [Output('scatter1', 'figure'),
-     Output('scatter2', 'figure')],
+    Output('scatter1', 'figure'),
     [Input('goterm1', 'value'),
-     Input('goterm2', 'value'),
-     Input('goterm3', 'value'),
+     Input('goterm2', 'value')]
+)
+def update_scatter_plot1(term1, term2):
+
+    #act = np.load('data/recount3_GTEx_pathway_activities.npy', mmap_mode='r')
+    act1 = load_numpy('https://storage.googleapis.com/ovae-me_data/pathway_activities/recount3_GTEx_pathway_activities_' + str(annot.Name.tolist().index(term1)) + '.npy')
+    act2 = load_numpy('https://storage.googleapis.com/ovae-me_data/pathway_activities/recount3_GTEx_pathway_activities_' + str(annot.Name.tolist().index(term2)) + '.npy')
+    act = pd.concat([pd.DataFrame(np.vstack((act1,act2)).T), sample_annot], axis=1)
+    act.columns = [term1, term2] + sample_annot.columns.tolist()
+
+    fig = create_scatter_plot(act, 'tissue', term1, term2)
+
+    return fig
+
+@app.callback(
+     Output('scatter2', 'figure'),
+    [Input('goterm3', 'value'),
      Input('goterm4', 'value')]
 )
-def update_scatter_plot(term1, term2, term3, term4):
+def update_scatter_plot2(term3, term4):
 
-    act = np.load('data/recount3_GTEx_pathway_activities.npy', mmap_mode='r')
+    #act = np.load('data/recount3_GTEx_pathway_activities.npy', mmap_mode='r')
+    act1 = load_numpy('https://storage.googleapis.com/ovae-me_data/pathway_activities/recount3_GTEx_pathway_activities_' + str(annot.Name.tolist().index(term3)) + '.npy')
+    act2 = load_numpy('https://storage.googleapis.com/ovae-me_data/pathway_activities/recount3_GTEx_pathway_activities_' + str(annot.Name.tolist().index(term4)) + '.npy')
+    act = pd.concat([pd.DataFrame(np.vstack((act1,act2)).T), sample_annot], axis=1)
+    act.columns = [term3, term4] + sample_annot.columns.tolist()
 
-    act1 = pd.concat([pd.DataFrame(act[:,[annot.Name.tolist().index(term1), annot.Name.tolist().index(term2)]]), 
-                      sample_annot], axis=1)
-    act1.columns = [term1, term2] + sample_annot.columns.tolist()
-    act2 = pd.concat([pd.DataFrame(act[:,[annot.Name.tolist().index(term3), annot.Name.tolist().index(term4)]]), 
-                      sample_annot], axis=1)
-    act2.columns = [term3, term4] + sample_annot.columns.tolist()
+    fig = create_scatter_plot(act, 'tissue', term3, term4)
 
-    fig1 = create_scatter_plot(act1, 'tissue', term1, term2)
-    fig2 = create_scatter_plot(act2, 'tissue', term3, term4)
-
-    return fig1, fig2
-
-
+    return fig
 
 # Callbacks for cytoscape graph generation
 
@@ -642,12 +685,14 @@ def update_scatter_plot(term1, term2, term3, term4):
 )
 def draw_graph1(tissue, values):
 
-    with open('data/recount3_GTEx_Wilcoxon_results.csv') as f:
-        text = "\n".join([line for line in f if tissue in line])
+    # with open('data/recount3_GTEx_Wilcoxon_results.csv') as f:
+    #     text = "\n".join([line for line in f if tissue in line])
 
-    data = pd.read_csv(StringIO(text), sep=";", index_col=0, header=None)
-    data.columns = ['id', 'term', 'genes', 'tissue', 'hits', 'med_stat', 'rank']
-    data = data.sort_values(['rank', 'hits', 'med_stat'], ascending = (True,False,False)).iloc[values[0]:values[1],:]
+    # data = pd.read_csv(StringIO(text), sep=";", index_col=0, header=None)
+    #data.columns = ['id', 'term', 'genes', 'tissue', 'hits', 'med_stat', 'rank']
+
+    data = wilcox_res[wilcox_res.tissue == tissue]
+    data = data.sort_values(['rank', 'med_stat'], ascending = (True, False)).iloc[values[0]:values[1],:]
 
     elements1, stylesheet1 = get_cytoscape_components(data)
 
@@ -661,19 +706,18 @@ def draw_graph1(tissue, values):
 )
 def draw_graph2(tissue, values):
 
-    with open('data/recount3_GTEx_Wilcoxon_results.csv') as f:
-        text = "\n".join([line for line in f if tissue in line])
+    # with open('data/recount3_GTEx_Wilcoxon_results.csv') as f:
+    #     text = "\n".join([line for line in f if tissue in line])
 
-    data = pd.read_csv(StringIO(text), sep=";", index_col=0, header=None)
-    data.columns = ['id', 'term', 'genes', 'tissue', 'hits', 'med_stat', 'rank']
-    data = data.sort_values(['rank', 'hits', 'med_stat'], ascending = (True,False,False)).iloc[values[0]:values[1],:]
+    # data = pd.read_csv(StringIO(text), sep=";", index_col=0, header=None)
+    # data.columns = ['id', 'term', 'genes', 'tissue', 'hits', 'med_stat', 'rank']
+
+    data = wilcox_res[wilcox_res.tissue == tissue]
+    data = data.sort_values(['rank', 'med_stat'], ascending = (True, False)).iloc[values[0]:values[1],:]
 
     elements2, stylesheet2 = get_cytoscape_components(data)
 
     return elements2, stylesheet2
-
-
-# Callback for downloading cytoscape graphs
 
 
 
@@ -718,5 +762,5 @@ def display_info(data1, data2):
 #-----------------------------------------------------------------------
 # main body to run the app
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False, host='0.0.0.0', port=8080)
 #-----------------------------------------------------------------------
