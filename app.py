@@ -13,20 +13,17 @@ import numpy as np
 import json
 import itertools
 import requests
-from io import StringIO, BytesIO
+from io import BytesIO
 
 import dash
-from dash import dash_table
 import dash_bootstrap_components as dbc
 from dash import html
 from dash import dcc
 import dash_cytoscape as cyto
-from dash.dependencies import Input, Output, State
+from dash.dependencies import Input, Output
 
 import plotly.express as px
-import plotly.graph_objects as go
 import plotly.io as pio
-from plotly.subplots import make_subplots
 
 from igraph import Graph
 
