@@ -56,24 +56,24 @@ def load_json(url):
     return json.load(BytesIO(response.content))
 
 # load GTEx annotation
-sample_annot = load_pandas('https://github.com/daria-dc/ovae-me_data/raw/main/data/recount3_GTEx_annot.csv', sep=",")
+sample_annot = load_pandas('https://github.com/daria-dc/ovae-app_data/raw/main/recount3_GTEx_annot.csv', sep=",")
 
 # load annotation of ontology terms
-annot = load_pandas('https://github.com/daria-dc/ovae-me_data/raw/main/data/GO_ensembl_trimmed_annot.csv', sep=";")
+annot = load_pandas('https://github.com/daria-dc/ovae-app_data/raw/main/GO_ensembl_trimmed_annot.csv', sep=";")
 annot['Term'] = annot[['ID', 'Name']].agg(' | '.join, axis=1)
 roots = annot[annot.depth == 0].ID.tolist()
 
 # load ontology graph
-onto_graph = load_json('https://github.com/daria-dc/ovae-me_data/raw/main/data/GO_ensembl_trimmed_graph.json')
+onto_graph = load_json('https://github.com/daria-dc/ovae-app_data/raw/main/GO_ensembl_trimmed_graph.json')
 
 # load wang semantic similarities
-wsem_sims = load_numpy('https://github.com/daria-dc/ovae-me_data/raw/main/data/GO_ensembl_trimmed_wsem_sim.npy')
+wsem_sims = load_numpy('https://github.com/daria-dc/ovae-app_data/raw/main/GO_ensembl_trimmed_wsem_sim.npy')
 
 # load UMAP results
-umap_res = load_pandas('https://github.com/daria-dc/ovae-me_data/raw/main/data/recount3_GTEx_UMAP_results.csv', ";")
+umap_res = load_pandas('https://github.com/daria-dc/ovae-app_data/raw/main/recount3_GTEx_UMAP_results.csv', ";")
 
 # load Wilcoxon res
-wilcox_res = load_pandas('https://github.com/daria-dc/ovae-me_data/raw/main/data/recount3_GTEx_Wilcoxon_results.csv', ";")
+wilcox_res = load_pandas('https://github.com/daria-dc/ovae-app_data/raw/main/recount3_GTEx_Wilcoxon_results.csv', ";")
 
 
 #-----------------------------------------------------------------------
@@ -638,8 +638,8 @@ def update_umap_scatter_plot(color1, color2):
 )
 def update_scatter_plot1(term1, term2):
 
-    act1 = load_numpy('https://github.com/daria-dc/ovae-me_data/raw/main/data/pathway_activities/recount3_GTEx_pathway_activities_' + str(annot.Name.tolist().index(term1)) + '.npy')
-    act2 = load_numpy('https://github.com/daria-dc/ovae-me_data/raw/main/data/pathway_activities/recount3_GTEx_pathway_activities_' + str(annot.Name.tolist().index(term2)) + '.npy')
+    act1 = load_numpy('https://github.com/daria-dc/ovae-app_data/raw/main/pathway_activities/recount3_GTEx_pathway_activities_' + str(annot.Name.tolist().index(term1)) + '.npy')
+    act2 = load_numpy('https://github.com/daria-dc/ovae-app_data/raw/main/pathway_activities/recount3_GTEx_pathway_activities_' + str(annot.Name.tolist().index(term2)) + '.npy')
     act = pd.concat([pd.DataFrame(np.vstack((act1,act2)).T), sample_annot], axis=1)
     act.columns = [term1, term2] + sample_annot.columns.tolist()
 
@@ -654,8 +654,8 @@ def update_scatter_plot1(term1, term2):
 )
 def update_scatter_plot2(term3, term4):
 
-    act1 = load_numpy('https://github.com/daria-dc/ovae-me_data/raw/main/data/pathway_activities/recount3_GTEx_pathway_activities_' + str(annot.Name.tolist().index(term3)) + '.npy')
-    act2 = load_numpy('https://github.com/daria-dc/ovae-me_data/raw/main/data/pathway_activities/recount3_GTEx_pathway_activities_' + str(annot.Name.tolist().index(term4)) + '.npy')
+    act1 = load_numpy('https://github.com/daria-dc/ovae-app_data/raw/main/pathway_activities/recount3_GTEx_pathway_activities_' + str(annot.Name.tolist().index(term3)) + '.npy')
+    act2 = load_numpy('https://github.com/daria-dc/ovae-app_data/raw/main/pathway_activities/recount3_GTEx_pathway_activities_' + str(annot.Name.tolist().index(term4)) + '.npy')
     act = pd.concat([pd.DataFrame(np.vstack((act1,act2)).T), sample_annot], axis=1)
     act.columns = [term3, term4] + sample_annot.columns.tolist()
 
